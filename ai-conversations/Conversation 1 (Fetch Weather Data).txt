@@ -1,0 +1,821 @@
+Tool: ChatGPT
+Date: 24/10/2025
+
+Me: a weather app needs to be built that uses the following template function to fetch data. the features should include 
+
+1. it should use the get_weather function from the fetch_my_weather library
+2. it should have the option to choose between the type of data "text" or "json"
+3. it should have the option to control number of days to forecast
+4. don not add unnecessary codes, try to focus on make it work with as simple code as it can be
+
+the template function is:
+
+def get_weather_data(location, forecast_days=5):
+    """
+    Retrieve weather data for a specified location.
+
+    Args:
+        location (str): City or location name
+        forecast_days (int): Number of days to forecast (1-5)
+
+    Returns:
+        dict: Weather data including current conditions and forecast
+    """
+    pass
+
+AI: Here’s a clean, minimal implementation that does exactly what you asked—uses fetch_my_weather.get_weather, lets you choose "text" or "json", and controls forecast days (1–5).
+
+import fetch_my_weather
+
+def get_weather_data(location, forecast_days=5, data_type="json"):
+    """
+    Retrieve weather data for a specified location via fetch_my_weather.
+
+    Args:
+        location (str): City or location name.
+        forecast_days (int): Number of days to forecast (1–5).
+        data_type (str): "json" or "text".
+
+    Returns:
+        Any: JSON (dict) when data_type="json", or a plain text string when data_type="text".
+    """
+    if data_type not in ("json", "text"):
+        raise ValueError('data_type must be "json" or "text"')
+    if not (1 <= int(forecast_days) <= 5):
+        raise ValueError("forecast_days must be between 1 and 5")
+
+    return fetch_my_weather.get_weather(
+        location=location,
+        format=data_type,
+        days=int(forecast_days)
+    )
+
+# --- minimal usage examples ---
+# JSON:
+# data = get_weather_data("Sydney", forecast_days=3, data_type="json")
+# print(data)  # dict
+
+# TEXT:
+# txt = get_weather_data("Sydney", forecast_days=3, data_type="text")
+# print(txt)   # nicely formatted plain text
+
+No extra helpers or wrappers.
+
+Pass data_type="text" to get the readable text output; keep data_type="json" for the raw dict.
+
+forecast_days is validated to stay within 1–5 as required.
+
+Me: The above code raises an error. The version of get_weather function does not include the "days" paramters. Rather it uses "view_options" paramter. Can it be used?
+
+AI: Yep — if your fetch_my_weather.get_weather uses a view_options parameter, you can pass the forecast length through that.
+
+import fetch_my_weather
+
+def get_weather_data(location, forecast_days=5, data_type="json"):
+    """
+    Retrieve weather data for a specified location via fetch_my_weather.
+
+    Args:
+        location (str): City or location name.
+        forecast_days (int): Number of days to forecast (1–5).
+        data_type (str): "json" or "text".
+
+    Returns:
+        dict or str: JSON (dict) when data_type="json", or a plain text string when data_type="text".
+    """
+    if data_type not in ("json", "text"):
+        raise ValueError('data_type must be "json" or "text"')
+    days = int(forecast_days)
+    if not (1 <= days <= 5):
+        raise ValueError("forecast_days must be between 1 and 5")
+
+    return fetch_my_weather.get_weather(
+        location=location,
+        format=data_type,
+        view_options={"forecast_days": days}
+    )
+If your package expects a slightly different key (e.g., "days" inside view_options), change that one line to:
+
+view_options={"days": days}
+
+Everything else stays the same.
+
+Me: It raises error. May be some issues with view_option data type conflict. The library documentation says that the "view_options" paramters takes argument as string. Can it done in the way the forecast_days is directly converted into string and then assign it to the "view_options" parameter
+
+--------------------------------------------------------------------------- TypeError Traceback (most recent call last) /tmp/ipython-input-3380778764.py in <cell line: 0>() 24 view_options={"forecast_days": days} 25 ) ---> 26 print(get_weather_data("Perth", 2, "text")) 2 frames /usr/local/lib/python3.12/dist-packages/fetch_my_weather/core.py in _build_url(location, units, view_options, lang, is_png, png_options, is_moon, moon_date, moon_location_hint, format) 398 options_list.append(png_options) 399 --> 400 combined_options = "".join(options_list) 401 402 # --- Output Format Handling --- TypeError: sequence item 0: expected str instance, dict found
+
+AI: Yes — if view_options must be a string, pass the days as a string.
+
+import fetch_my_weather
+
+def get_weather_data(location, forecast_days=5, data_type="json"):
+    """
+    Retrieve weather data via fetch_my_weather with a string view_options.
+
+    Args:
+        location (str): City or location name.
+        forecast_days (int): Number of days to forecast (1–5).
+        data_type (str): "json" or "text".
+
+    Returns:
+        dict or str: JSON when data_type="json", or a plain text string when data_type="text".
+    """
+    if data_type not in ("json", "text"):
+        raise ValueError('data_type must be "json" or "text"')
+    days = int(forecast_days)
+    if not (1 <= days <= 5):
+        raise ValueError("forecast_days must be between 1 and 5")
+
+    # If docs say view_options is a *string*, pass the days as a string.
+    return fetch_my_weather.get_weather(
+        location=location,
+        format=data_type,
+        view_options=str(days)   # <- key part
+    )
+If your library expects a key-value string (some builds do), change just the view_options line to one of these (try in this order):
+
+view_options=f"days={days}"
+# or
+view_options=f"forecast_days={days}"
+# or
+view_options=f"forecast={days}"
+
+Me: Okay, now it works but there are two things:
+1. The json output prints all the three days forcast regardless of the number of days to forecast are selected. Depending on the "forecast_days" selected by the user it should generate another variable that hold only weather data that is equal to "forecast_days"
+2. The json output is not readable. Can u make another helper function that presents the json data into a human readable format. It should in the way that the helper function can be commented and without any hastle an it does not affect the get_weather_data function
+
+AI: Perfect ✅ — let’s make it clean, modular, and simple while addressing both of your needs...
+
+Limit the forecast to the number of days requested.
+
+Add a helper (pretty_print_weather) that formats JSON neatly for humans, but can be easily commented out without affecting the main function.
+
+Here’s the improved version:
+
+import fetch_my_weather
+import json
+
+def get_weather_data(location, forecast_days=5, data_type="json"):
+    """
+    Retrieve weather data for a specified location via fetch_my_weather.
+
+    Args:
+        location (str): City or location name.
+        forecast_days (int): Number of days to forecast (1–5).
+        data_type (str): "json" or "text".
+
+    Returns:
+        dict or str: JSON (filtered to 'forecast_days') or plain text string.
+    """
+    if data_type not in ("json", "text"):
+        raise ValueError('data_type must be "json" or "text"')
+    days = int(forecast_days)
+    if not (1 <= days <= 5):
+        raise ValueError("forecast_days must be between 1 and 5")
+
+    data = fetch_my_weather.get_weather(
+        location=location,
+        format=data_type,
+        view_options=str(days)
+    )
+
+    # If JSON, trim to the selected number of days
+    if data_type == "json" and isinstance(data, dict):
+        try:
+            if "weather" in data:
+                data["weather"] = data["weather"][:days]
+        except Exception:
+            pass
+
+    return data
+
+
+# --- Optional helper: readable JSON output ---
+def pretty_print_weather(weather_data):
+    """
+    Pretty-print JSON weather data in a human-readable format.
+    Safe to comment out — does not affect get_weather_data().
+    """
+    print(json.dumps(weather_data, indent=2, ensure_ascii=False))
+
+
+# --- Example usage ---
+# weather_json = get_weather_data("Perth", forecast_days=2, data_type="json")
+# pretty_print_weather(weather_json)
+#
+# weather_text = get_weather_data("Perth", forecast_days=2, data_type="text")
+# print(weather_text)
+
+💡 Key points:
+
+data["weather"][:days] ensures you only see the number of forecast days the user requested.
+
+The helper pretty_print_weather() simply formats JSON for display and can be commented out anytime without affecting the main function.
+
+The code remains minimal, with no extra dependencies or logic beyond what’s needed.
+
+
+Me: [shared screenshot] It generates the following error
+
+AI: Gotcha — your library is returning a custom object (e.g., WeatherResponse), so json.dumps() chokes. Below is a minimal fix that...
+
+Converts whatever the library returns into a plain dict first
+
+Trims the forecast to the requested number of days (tries common keys)
+
+Adds a helper to pretty-print (safe to comment out)
+
+import json
+import fetch_my_weather
+from dataclasses import is_dataclass, asdict
+
+# --- tiny internal helpers (no external deps) ---
+
+def _to_dict(obj):
+    """Best-effort convert library return value to a plain dict."""
+    if isinstance(obj, dict):
+        return obj
+    # common patterns (pydantic / custom / dataclass)
+    for attr in ("to_dict", "dict", "model_dump"):
+        if hasattr(obj, attr) and callable(getattr(obj, attr)):
+            return getattr(obj, attr)()
+    if hasattr(obj, "json") and callable(getattr(obj, "json")):
+        try:
+            return json.loads(obj.json())
+        except Exception:
+            pass
+    if is_dataclass(obj):
+        return asdict(obj)
+    # sometimes it's already a JSON string
+    if isinstance(obj, str):
+        try:
+            return json.loads(obj)
+        except Exception:
+            pass
+    # last resort: wrap raw repr
+    return {"raw": repr(obj)}
+
+def _trim_days(d, days):
+    """Trim forecast arrays to `days` across common shapes, in-place."""
+    try:
+        if "weather" in d and isinstance(d["weather"], list):
+            d["weather"] = d["weather"][:days]
+        elif "forecast" in d:
+            f = d["forecast"]
+            if isinstance(f, list):
+                d["forecast"] = f[:days]
+            elif isinstance(f, dict):
+                if "forecastday" in f and isinstance(f["forecastday"], list):
+                    f["forecastday"] = f["forecastday"][:days]
+                elif "daily" in f and isinstance(f["daily"], list):
+                    f["daily"] = f["daily"][:days]
+        elif "daily" in d and isinstance(d["daily"], list):
+            d["daily"] = d["daily"][:days]
+    except Exception:
+        # stay silent; return whatever we could trim
+        pass
+    return d
+
+# --- main API you asked for ---
+
+def get_weather_data(location, forecast_days=5, data_type="json"):
+    """
+    Retrieve weather data for a specified location via fetch_my_weather.
+
+    Args:
+        location (str): City or location name.
+        forecast_days (int): Number of days to forecast (1–5).
+        data_type (str): "json" or "text".
+
+    Returns:
+        dict or str: JSON (trimmed to `forecast_days`) or plain text string.
+    """
+    if data_type not in ("json", "text"):
+        raise ValueError('data_type must be "json" or "text"')
+    days = int(forecast_days)
+    if not (1 <= days <= 5):
+        raise ValueError("forecast_days must be between 1 and 5")
+
+    raw = fetch_my_weather.get_weather(
+        location=location,
+        format=data_type,
+        view_options=str(days)  # library expects a *string*
+    )
+
+    if data_type == "json":
+        data = _to_dict(raw)
+        return _trim_days(data, days)
+    return raw  # text path
+
+# --- optional helper (safe to comment out) ---
+
+def pretty_print_weather(weather_data):
+    """
+    Print JSON weather data in a readable format.
+    Safe to comment out; independent of get_weather_data().
+    """
+    data = _to_dict(weather_data)  # ensure serializable
+    print(json.dumps(data, indent=2, ensure_ascii=False))
+
+
+# ---- Example ----
+# weather_json = get_weather_data("Perth", 2, "json")
+# pretty_print_weather(weather_json)  # <-- no TypeError now
+# weather_text = get_weather_data("Perth", 2, "text")
+# print(weather_text)
+
+Why this fixes your error:
+
+The library returns a custom object; _to_dict converts it to plain Python types before pretty-printing.
+
+Forecast slicing is robust to common response shapes (weather[], forecast[]., forecast.forecastday[], daily[]), so you only see the number of days you asked for.
+
+Okay it works. Now code should have some exection handling features so that the code does not run into errors for inappropriate inputs.
+1. It should handle wrong spelling for locations
+2. If forecast_days parameter is not set, it should choose a default value, let's say 3 days
+3. If the data_type is not selected, it should by default choose the data_type as "json"
+
+
+Me: Okay it works. Now code should have some exection handling features so that the code does not run into errors for inappropriate inputs.
+1. It should handle wrong spelling for locations
+2. If forecast_days parameter is not set, it should choose a default value, let's say 3 days
+3. If the data_type is not selected, it should by default choose the data_type as "json"
+
+AI: Awesome — let’s add lightweight, practical error handling without bloating the code. This version...
+Defaults to 3 days and "json" when params aren’t provided.
+
+Gently sanitizes the location and retries once (helps with minor typos/extra spaces/casing).
+
+Catches library errors and returns a clear, safe result instead of crashing.
+
+Keeps code small and focused.
+
+import json
+import fetch_my_weather
+from dataclasses import is_dataclass, asdict
+
+# ---------- tiny helpers (minimal & local) ----------
+
+def _to_dict(obj):
+    """Best-effort conversion to a plain dict (handles custom response objects)."""
+    if isinstance(obj, dict):
+        return obj
+    for attr in ("to_dict", "dict", "model_dump"):
+        if hasattr(obj, attr) and callable(getattr(obj, attr)):
+            return getattr(obj, attr)()
+    if hasattr(obj, "json") and callable(getattr(obj, "json")):
+        try:
+            return json.loads(obj.json())
+        except Exception:
+            pass
+    if is_dataclass(obj):
+        return asdict(obj)
+    if isinstance(obj, str):
+        try:
+            return json.loads(obj)
+        except Exception:
+            pass
+    return {"raw": repr(obj)}
+
+def _trim_days(d, days):
+    """Trim common forecast arrays to `days`."""
+    try:
+        if "weather" in d and isinstance(d["weather"], list):
+            d["weather"] = d["weather"][:days]
+        elif "forecast" in d:
+            f = d["forecast"]
+            if isinstance(f, list):
+                d["forecast"] = f[:days]
+            elif isinstance(f, dict):
+                if "forecastday" in f and isinstance(f["forecastday"], list):
+                    f["forecastday"] = f["forecastday"][:days]
+                elif "daily" in f and isinstance(f["daily"], list):
+                    f["daily"] = f["daily"][:days]
+        elif "daily" in d and isinstance(d["daily"], list):
+            d["daily"] = d["daily"][:days]
+    except Exception:
+        pass
+    return d
+
+def _clean_location(loc):
+    """Normalize spacing/casing to reduce simple spelling/format issues."""
+    s = str(loc).strip()
+    s = " ".join(s.split())           # collapse extra spaces
+    return s.title() or s             # Title Case fallback
+
+def _safe_error(message, data_type):
+    """Return a non-crashing error payload consistent with requested format."""
+    if data_type == "text":
+        return f"Error: {message}"
+    return {"error": message}
+
+# ---------- main API ----------
+
+def get_weather_data(location, forecast_days=None, data_type=None):
+    """
+    Retrieve weather data via fetch_my_weather with safe defaults and error handling.
+
+    Args:
+        location (str): City or location name (minor typos cleaned).
+        forecast_days (int|None): Number of days to forecast (1–5). Defaults to 3.
+        data_type (str|None): "json" or "text". Defaults to "json".
+
+    Returns:
+        dict or str: JSON (trimmed to selected days) or formatted text.
+                     On failure, returns a safe error payload.
+    """
+    # ---- defaults ----
+    data_type = (data_type or "json").lower()
+    if data_type not in ("json", "text"):
+        data_type = "json"
+
+    try:
+        days = 3 if forecast_days is None else int(forecast_days)
+    except Exception:
+        days = 3
+    if days < 1 or days > 5:
+        days = 3
+
+    # ---- attempt fetch (with one retry after cleaning the location) ----
+    def _fetch(loc_str):
+        return fetch_my_weather.get_weather(
+            location=loc_str,
+            format=data_type,
+            view_options=str(days)   # library expects a *string*
+        )
+
+    try:
+        raw = _fetch(location)
+    except Exception:
+        try:
+            raw = _fetch(_clean_location(location))
+        except Exception:
+            return _safe_error("Could not find that location. Please check the spelling.", data_type)
+
+    # ---- format / trim ----
+    if data_type == "json":
+        data = _to_dict(raw)
+        data = _trim_days(data, days)
+        return data
+    else:
+        # text path: library already returns a readable string
+        return raw
+
+# ---------- optional helper (safe to comment out) ----------
+
+def pretty_print_weather(weather_data):
+    """
+    Pretty-print JSON weather data for humans.
+    Safe to comment out; does not affect get_weather_data().
+    """
+    data = _to_dict(weather_data)
+    print(json.dumps(data, indent=2, ensure_ascii=False))
+
+
+# ---------- Example ----------
+# j = get_weather_data("perthh", data_type=None)          # defaults: 3 days, json
+# pretty_print_weather(j)
+# t = get_weather_data("Perth", forecast_days=None, data_type="text")
+# print(t)
+
+What’s handled now
+
+Misspelled locations: we retry once with a cleaned, title-cased version. If it still fails, you get a clear error payload (not a crash).
+
+Missing forecast_days: defaults to 3 and clamps to 1–5 if needed.
+
+Missing data_type: defaults to "json" (and pretty-printer works safely on custom objects).
+
+This keeps everything compact and resilient without adding unnecessary complexity.
+
+Me: [shared screenshot] It does not handles exception for the wrong location name
+
+AI: Got it — the library is returning a 404 when the place name is misspelled. Let’s make the function gracefully handle wrong spellings by fuzzy matching...
+
+Normalizing the input (trim, collapse spaces, Title Case)
+
+Trying a fuzzy fallback (e.g., “Prth” → “Perth”) using a small built-in list of common cities (you can extend this)
+
+Returning a clean error payload instead of crashing or leaking library errors
+
+Keeping defaults: 3 days and "json" if not provided
+
+Here’s the tight, minimal version:
+
+import json
+import difflib
+import fetch_my_weather
+from dataclasses import is_dataclass, asdict
+
+# Small, editable list for fuzzy correction (extend as you like)
+_COMMON_CITIES = [
+    "Perth", "Sydney", "Melbourne", "Brisbane", "Adelaide", "Hobart",
+    "Canberra", "Darwin", "Auckland", "Wellington", "Christchurch",
+    "Tokyo", "Osaka", "Kyoto", "London", "Paris", "New York", "Los Angeles",
+    "Singapore", "Bangkok", "Dhaka", "Delhi", "Mumbai", "Karachi"
+]
+
+# ---------- tiny helpers ----------
+
+def _to_dict(obj):
+    if isinstance(obj, dict):
+        return obj
+    for attr in ("to_dict", "dict", "model_dump"):
+        if hasattr(obj, attr) and callable(getattr(obj, attr)):
+            return getattr(obj, attr)()
+    if hasattr(obj, "json") and callable(getattr(obj, "json")):
+        try:
+            return json.loads(obj.json())
+        except Exception:
+            pass
+    if is_dataclass(obj):
+        return asdict(obj)
+    if isinstance(obj, str):
+        try:
+            return json.loads(obj)
+        except Exception:
+            pass
+    return {"raw": repr(obj)}
+
+def _trim_days(d, days):
+    try:
+        if "weather" in d and isinstance(d["weather"], list):
+            d["weather"] = d["weather"][:days]
+        elif "forecast" in d:
+            f = d["forecast"]
+            if isinstance(f, list):
+                d["forecast"] = f[:days]
+            elif isinstance(f, dict):
+                if "forecastday" in f and isinstance(f["forecastday"], list):
+                    f["forecastday"] = f["forecastday"][:days]
+                elif "daily" in f and isinstance(f["daily"], list):
+                    f["daily"] = f["daily"][:days]
+        elif "daily" in d and isinstance(d["daily"], list):
+            d["daily"] = d["daily"][:days]
+    except Exception:
+        pass
+    return d
+
+def _clean_location(loc: str) -> str:
+    s = str(loc).strip()
+    s = " ".join(s.split())
+    return s.title() or s
+
+def _suggest_city(loc: str):
+    # fuzzy match against the short list
+    matches = difflib.get_close_matches(loc, _COMMON_CITIES, n=1, cutoff=0.7)
+    return matches[0] if matches else None
+
+def _safe_error(message, data_type, hint=None):
+    if data_type == "text":
+        return f"Error: {message}" + (f" (Did you mean: {hint}?)" if hint else "")
+    out = {"error": message}
+    if hint:
+        out["hint"] = f"Did you mean: {hint}?"
+    return out
+
+def _fetch(loc_str, data_type, days):
+    # library expects string for view_options
+    return fetch_my_weather.get_weather(
+        location=loc_str,
+        format=data_type,
+        view_options=str(days)
+    )
+
+# ---------- main API ----------
+
+def get_weather_data(location, forecast_days=None, data_type=None):
+    """
+    Weather via fetch_my_weather with defaults, typo handling, and safe errors.
+
+    Defaults:
+      - forecast_days = 3 (clamped to 1..5)
+      - data_type = "json"
+    """
+    # defaults
+    data_type = (data_type or "json").lower()
+    if data_type not in ("json", "text"):
+        data_type = "json"
+
+    try:
+        days = 3 if forecast_days is None else int(forecast_days)
+    except Exception:
+        days = 3
+    if not (1 <= days <= 5):
+        days = 3
+
+    # attempt 1: as typed
+    try:
+        raw = _fetch(location, data_type, days)
+    except Exception:
+        raw = None
+
+    # attempt 2: cleaned casing/spacing
+    if raw is None:
+        try:
+            raw = _fetch(_clean_location(location), data_type, days)
+        except Exception:
+            raw = None
+
+    # attempt 3: fuzzy suggestion
+    if raw is None:
+        suggestion = _suggest_city(str(location))
+        if suggestion:
+            try:
+                raw = _fetch(suggestion, data_type, days)
+                # annotate result (json) or prepend note (text)
+                if data_type == "json":
+                    data = _to_dict(raw)
+                    data = _trim_days(data, days)
+                    data["resolved_location"] = suggestion
+                    return data
+                else:
+                    return f"(Using '{suggestion}' based on your input)\n{raw}"
+            except Exception:
+                # fall through to final error
+                return _safe_error("Could not find that location. Please check the spelling.",
+                                   data_type, hint=suggestion)
+        # no suggestion found
+        return _safe_error("Could not find that location. Please check the spelling.", data_type)
+
+    # success path
+    if data_type == "json":
+        data = _to_dict(raw)
+        data = _trim_days(data, days)
+        return data
+    return raw
+
+# ---------- optional helper ----------
+
+def pretty_print_weather(weather_data):
+    data = _to_dict(weather_data)
+    print(json.dumps(data, indent=2, ensure_ascii=False))
+
+What’s improved
+
+Wrong spellings handled: tries original → cleaned → fuzzy suggestion. If a close match is found, it fetches for that city and (for JSON) sets resolved_location so you know what was used; for text, it adds a small note.
+
+Defaults: forecast_days=None → 3, out-of-range values are clamped back to 3. data_type=None → "json".
+
+No crashes: if everything fails, you get a concise, friendly error (JSON or text), not a traceback.
+
+You can add or replace items in _COMMON_CITIES to suit your user base (e.g., only Australian or global cities). The rest of the code stays minimal.
+
+
+
+Me: It may not be an efficent way to use list of cities because you can not list all the cities. Rather can it be done in the way that, it first tries to fetch weather information from the user set location, if it fails it informs the user that what is the reason for the error rather than running the whole program into error
+
+AI: Totally—ditch the city list. Here’s a small, robust version that:
+- Tries the user’s location once (with light cleanup).
+- If the fetch fails, doesn’t crash—returns a clear, user-facing error explaining why.
+- Keeps defaults: 3 days, "json".
+- Still trims JSON to the requested number of days and includes a pretty printer you can comment out.
+
+import json
+import fetch_my_weather
+from dataclasses import is_dataclass, asdict
+
+# -------- tiny helpers (minimal, self-contained) --------
+
+def _to_dict(obj):
+    """Best-effort conversion to JSON-serializable dict."""
+    if isinstance(obj, dict):
+        return obj
+    for attr in ("to_dict", "dict", "model_dump"):
+        if hasattr(obj, attr) and callable(getattr(obj, attr)):
+            return getattr(obj, attr)()
+    if hasattr(obj, "json") and callable(getattr(obj, "json")):
+        try:
+            return json.loads(obj.json())
+        except Exception:
+            pass
+    if is_dataclass(obj):
+        return asdict(obj)
+    if isinstance(obj, str):
+        try:
+            return json.loads(obj)
+        except Exception:
+            pass
+    return {"raw": repr(obj)}
+
+def _trim_days(d, days):
+    """Trim common forecast arrays to `days` if present."""
+    try:
+        if "weather" in d and isinstance(d["weather"], list):
+            d["weather"] = d["weather"][:days]
+        elif "forecast" in d:
+            f = d["forecast"]
+            if isinstance(f, list):
+                d["forecast"] = f[:days]
+            elif isinstance(f, dict):
+                if "forecastday" in f and isinstance(f["forecastday"], list):
+                    f["forecastday"] = f["forecastday"][:days]
+                elif "daily" in f and isinstance(f["daily"], list):
+                    f["daily"] = f["daily"][:days]
+        elif "daily" in d and isinstance(d["daily"], list):
+            d["daily"] = d["daily"][:days]
+    except Exception:
+        pass
+    return d
+
+def _clean_location(loc: str) -> str:
+    """Normalize spacing/casing (helps with leading/trailing spaces)."""
+    s = str(loc).strip()
+    s = " ".join(s.split())
+    return s.title() or s
+
+def _format_error_payload(e, data_type="json"):
+    """
+    Build a clear error message from exceptions raised by the library/HTTP layer.
+    Tries to surface status code, URL, and a short preview of the response body.
+    """
+    status = getattr(e, "status", None) or getattr(e, "status_code", None)
+    url = getattr(e, "url", None)
+    body = getattr(e, "body", None) or getattr(e, "response", None)
+    # If it's a requests-like HTTPError:
+    resp = getattr(e, "response", None)
+    if hasattr(resp, "status_code"):
+        status = status or resp.status_code
+    if hasattr(resp, "url"):
+        url = url or resp.url
+    if hasattr(resp, "text"):
+        body = body or resp.text
+
+    parts = []
+    if status: parts.append(f"HTTP {status}")
+    if url: parts.append(f"URL: {url}")
+    msg = str(e).strip()
+    if msg:
+        parts.append(f"Message: {msg}")
+    if body:
+        preview = body if isinstance(body, str) else str(body)
+        preview = preview.strip().splitlines()
+        preview = "\n".join(preview[:3])  # first few lines only
+        parts.append(f"Response (start):\n{preview}")
+
+    text = "Fetch failed.\n" + ("\n".join(parts) if parts else "Unknown error.")
+    if data_type == "text":
+        return text
+    return {"error": text}
+
+# -------- main API --------
+
+def get_weather_data(location, forecast_days=None, data_type=None):
+    """
+    Retrieve weather data via fetch_my_weather with safe defaults and clear errors.
+
+    Defaults:
+      - forecast_days: 3 (clamped to 1..5 if out of range or invalid)
+      - data_type: "json"
+    """
+    # defaults
+    data_type = (data_type or "json").lower()
+    if data_type not in ("json", "text"):
+        data_type = "json"
+
+    try:
+        days = 3 if forecast_days is None else int(forecast_days)
+    except Exception:
+        days = 3
+    if not (1 <= days <= 5):
+        days = 3
+
+    loc = _clean_location(location)
+
+    try:
+        raw = fetch_my_weather.get_weather(
+            location=loc,
+            format=data_type,
+            view_options=str(days)  # library expects a *string*
+        )
+    except Exception as e:
+        # Return a readable error payload instead of crashing.
+        return _format_error_payload(e, data_type=data_type)
+
+    # success path
+    if data_type == "json":
+        data = _to_dict(raw)
+        return _trim_days(data, days)
+    return raw  # text output is already human-readable
+
+# -------- optional helper (safe to comment out) --------
+
+def pretty_print_weather(weather_data):
+    """Pretty-print JSON weather data (won’t crash on custom objects)."""
+    data = _to_dict(weather_data)
+    print(json.dumps(data, indent=2, ensure_ascii=False))
+
+
+# ---- Example usage ----
+# j = get_weather_data("Prth")                 # defaults → 3 days, json; returns clear error if 404
+# pretty_print_weather(j)
+# t = get_weather_data("Perth", 2, "text")     # text output
+# print(t)
+
+Behavior now:
+
+If a user types a bad location, the function returns a concise error (JSON or text), including the HTTP status/URL and a short response preview—no traceback and no extra city lists.
+
+If forecast_days or data_type are omitted or invalid, it uses 3 and "json".
+
+JSON forecasts are trimmed to the requested number of days.
