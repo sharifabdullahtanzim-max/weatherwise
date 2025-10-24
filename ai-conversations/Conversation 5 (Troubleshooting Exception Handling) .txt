@@ -1,0 +1,744 @@
+Me: The following code uses fetch_my_weather library to fetch real weather data and display it. It should have feature to handle exception. It could be wrong location name or internet connection issue.
+
+The code tries to retrieve data from the  information that the user provided. If it can not, then it clearly prints the reason for the error with raising abruptly exiting the program. Update the following code to do so. It should show any random weather result. For the connectivity issue, it does the same. Hightlights the reason for the error and safely ends the execution.
+
+
+def _to_dict(obj):
+    """Best-effort conversion to JSON-serializable dict."""
+    if isinstance(obj, dict):
+        return obj
+    for attr in ("to_dict", "dict", "model_dump"):
+        if hasattr(obj, attr) and callable(getattr(obj, attr)):
+            return getattr(obj, attr)()
+    if hasattr(obj, "json") and callable(getattr(obj, "json")):
+        try:
+            return json.loads(obj.json())
+        except Exception:
+            pass
+    if is_dataclass(obj):
+        return asdict(obj)
+    if isinstance(obj, str):
+        try:
+            return json.loads(obj)
+        except Exception:
+            pass
+    return {"raw": repr(obj)}
+
+def _trim_days(d, days):
+    """Trim common forecast arrays to `days` if present."""
+    try:
+        if "weather" in d and isinstance(d["weather"], list):
+            d["weather"] = d["weather"][:days]
+        elif "forecast" in d:
+            f = d["forecast"]
+            if isinstance(f, list):
+                d["forecast"] = f[:days]
+            elif isinstance(f, dict):
+                if "forecastday" in f and isinstance(f["forecastday"], list):
+                    f["forecastday"] = f["forecastday"][:days]
+                elif "daily" in f and isinstance(f["daily"], list):
+                    f["daily"] = f["daily"][:days]
+        elif "daily" in d and isinstance(d["daily"], list):
+            d["daily"] = d["daily"][:days]
+    except Exception:
+        pass
+    return d
+
+def _clean_location(loc: str) -> str:
+    """Normalize spacing/casing (helps with leading/trailing spaces)."""
+    s = str(loc).strip()
+    s = " ".join(s.split())
+    return s.title() or s
+
+def _format_error_payload(e, data_type="json"):
+    """
+    Build a clear error message from exceptions raised by the library/HTTP layer.
+    Tries to surface status code, URL, and a short preview of the response body.
+    """
+    status = getattr(e, "status", None) or getattr(e, "status_code", None)
+    url = getattr(e, "url", None)
+    body = getattr(e, "body", None) or getattr(e, "response", None)
+    # If it's a requests-like HTTPError:
+    resp = getattr(e, "response", None)
+    if hasattr(resp, "status_code"):
+        status = status or resp.status_code
+    if hasattr(resp, "url"):
+        url = url or resp.url
+    if hasattr(resp, "text"):
+        body = body or resp.text
+
+    parts = []
+    if status: parts.append(f"HTTP {status}")
+    if url: parts.append(f"URL: {url}")
+    msg = str(e).strip()
+    if msg:
+        parts.append(f"Message: {msg}")
+    if body:
+        preview = body if isinstance(body, str) else str(body)
+        preview = preview.strip().splitlines()
+        preview = "\n".join(preview[:3])  # first few lines only
+        parts.append(f"Response (start):\n{preview}")
+
+    text = "Fetch failed.\n" + ("\n".join(parts) if parts else "Unknown error.")
+    if data_type == "text":
+        return text
+    return {"error": text}
+
+# -------- main API --------
+
+def get_weather_data(location, forecast_days=None, data_type=None):
+    """
+    Retrieve weather data via fetch_my_weather with safe defaults and clear errors.
+
+    Defaults:
+      - forecast_days: 3 (clamped to 1..5 if out of range or invalid)
+      - data_type: "json"
+    """
+    # defaults
+    data_type = (data_type or "json").lower()
+    if data_type not in ("json", "text"):
+        data_type = "json"
+
+    try:
+        days = 3 if forecast_days is None else int(forecast_days)
+    except Exception:
+        days = 3
+    if not (1 <= days <= 5):
+        days = 3
+
+    loc = _clean_location(location)
+
+    try:
+        raw = fetch_my_weather.get_weather(
+            location=loc,
+            format=data_type,
+            view_options=str(days)  # library expects a *string*
+        )
+    except Exception as e:
+        # Return a readable error payload instead of crashing.
+        return _format_error_payload(e, data_type=data_type)
+
+    # success path
+    if data_type == "json":
+        data = _to_dict(raw)
+        return _trim_days(data, days)
+    return raw  # text output is already human-readable
+
+# -------- optional helper (safe to comment out) --------
+
+def pretty_print_weather(weather_data):
+    """Pretty-print JSON weather data (won’t crash on custom objects)."""
+    data = _to_dict(weather_data)
+    print(json.dumps(data, indent=2, ensure_ascii=False))
+	
+AI: Here’s a drop-in, safer version that:
+
+validates & cleans inputs
+
+catches bad location and falls back to a random known city (and tells you)
+
+catches network/timeout/HTTP errors and prints a clear reason without crashing
+
+keeps your original helpers but fixes missing imports
+
+preserves json vs text output; for json it adds a non-breaking meta note when using a fallback
+
+import json
+import random
+import socket
+from dataclasses import is_dataclass, asdict
+
+# If your file doesn't already import the library, keep this here:
+import fetch_my_weather
+
+# ===== Helpers you already had (tweaked only where needed) =====
+
+def _to_dict(obj):
+    """Best-effort conversion to JSON-serializable dict."""
+    if isinstance(obj, dict):
+        return obj
+    for attr in ("to_dict", "dict", "model_dump"):
+        if hasattr(obj, attr) and callable(getattr(obj, attr)):
+            return getattr(obj, attr)()
+    if hasattr(obj, "json") and callable(getattr(obj, "json")):
+        try:
+            return json.loads(obj.json())
+        except Exception:
+            pass
+    if is_dataclass(obj):
+        return asdict(obj)
+    if isinstance(obj, str):
+        try:
+            return json.loads(obj)
+        except Exception:
+            pass
+    return {"raw": repr(obj)}
+
+def _trim_days(d, days):
+    """Trim common forecast arrays to `days` if present."""
+    try:
+        if "weather" in d and isinstance(d["weather"], list):
+            d["weather"] = d["weather"][:days]
+        elif "forecast" in d:
+            f = d["forecast"]
+            if isinstance(f, list):
+                d["forecast"] = f[:days]
+            elif isinstance(f, dict):
+                if "forecastday" in f and isinstance(f["forecastday"], list):
+                    f["forecastday"] = f["forecastday"][:days]
+                elif "daily" in f and isinstance(f["daily"], list):
+                    f["daily"] = f["daily"][:days]
+        elif "daily" in d and isinstance(d["daily"], list):
+            d["daily"] = d["daily"][:days]
+    except Exception:
+        pass
+    return d
+
+def _clean_location(loc: str) -> str:
+    """Normalize spacing/casing (helps with leading/trailing spaces)."""
+    s = str(loc).strip()
+    s = " ".join(s.split())
+    return s.title() or s
+
+def _pick_fallback_location() -> str:
+    """Return a random well-known city that almost always resolves."""
+    candidates = [
+        "Perth", "Sydney", "Melbourne", "Auckland", "Singapore",
+        "Tokyo", "London", "New York", "Toronto", "Paris", "Mumbai"
+    ]
+    return random.choice(candidates)
+
+def _classify_error(e) -> str:
+    """
+    Best-effort classification of the exception:
+      - 'network'    : DNS, connection, timeout, offline
+      - 'http'       : HTTP status errors (e.g., 4xx/5xx)
+      - 'bad_loc'    : likely invalid location string
+      - 'unknown'    : everything else
+    """
+    # Common network-style exceptions
+    network_like = (
+        ConnectionError, TimeoutError, socket.gaierror, socket.timeout
+    )
+    try:
+        import requests
+        network_like = network_like + (
+            requests.exceptions.ConnectionError,
+            requests.exceptions.Timeout,
+        )
+        if isinstance(e, requests.exceptions.HTTPError):
+            # Let HTTP error be classified below
+            pass
+    except Exception:
+        # requests might not be present; that's fine
+        pass
+
+    # 1) Network / connectivity
+    if isinstance(e, network_like):
+        return "network"
+
+    # 2) Requests-like HTTPError or anything with a response + status
+    resp = getattr(e, "response", None)
+    status = getattr(resp, "status_code", None) or getattr(e, "status", None)
+    if status:
+        return "http"
+
+    # 3) Heuristics for bad/unknown location based on error text
+    msg = (str(e) or "").lower()
+    bad_loc_markers = [
+        "location not found", "no matching location", "invalid location",
+        "could not geocode", "q parameter is invalid", "city not found"
+    ]
+    if any(mark in msg for mark in bad_loc_markers):
+        return "bad_loc"
+
+    # 4) Fallback
+    return "unknown"
+
+def _format_error_payload(e, data_type="json"):
+    """
+    Build a clear error message from exceptions raised by the library/HTTP layer.
+    Tries to surface status code, URL, and a short preview of the response body.
+    """
+    status = getattr(e, "status", None) or getattr(e, "status_code", None)
+    url = getattr(e, "url", None)
+    body = getattr(e, "body", None) or getattr(e, "response", None)
+    resp = getattr(e, "response", None)
+    if hasattr(resp, "status_code"):
+        status = status or resp.status_code
+    if hasattr(resp, "url"):
+        url = url or resp.url
+    if hasattr(resp, "text"):
+        body = body or resp.text
+
+    parts = []
+    if status: parts.append(f"HTTP {status}")
+    if url: parts.append(f"URL: {url}")
+    msg = str(e).strip()
+    if msg:
+        parts.append(f"Message: {msg}")
+    if body:
+        preview = body if isinstance(body, str) else str(body)
+        preview = preview.strip().splitlines()
+        preview = "\n".join(preview[:3])  # first few lines only
+        parts.append(f"Response (start):\n{preview}")
+
+    text = "Fetch failed.\n" + ("\n".join(parts) if parts else "Unknown error.")
+    if data_type == "text":
+        return text
+    return {"error": text}
+
+# ===== Main API with robust error handling & graceful fallback =====
+
+def get_weather_data(location, forecast_days=None, data_type=None):
+    """
+    Retrieve weather data via fetch_my_weather with safe defaults and clear errors.
+
+    Defaults:
+      - forecast_days: 3 (clamped to 1..5 if out of range or invalid)
+      - data_type: "json"
+
+    Behavior on errors:
+      - Invalid / unresolvable location: prints reason and returns a RANDOM city's weather instead
+      - Network / connectivity error: prints reason and returns a clear error payload (no crash)
+      - HTTP / other error: prints reason and returns a clear error payload (no crash)
+    """
+    # defaults
+    data_type = (data_type or "json").lower()
+    if data_type not in ("json", "text"):
+        data_type = "json"
+
+    try:
+        days = 3 if forecast_days is None else int(forecast_days)
+    except Exception:
+        days = 3
+    if not (1 <= days <= 5):
+        days = 3
+
+    loc = _clean_location(location)
+
+    def _fetch(loc_name: str):
+        return fetch_my_weather.get_weather(
+            location=loc_name,
+            format=data_type,
+            view_options=str(days)  # library expects a *string*
+        )
+
+    # First attempt: user-provided location
+    try:
+        raw = _fetch(loc)
+    except Exception as e:
+        category = _classify_error(e)
+
+        # NETWORK: report and safely end
+        if category == "network":
+            msg = "❌ Network/connectivity issue detected. Unable to reach the weather service."
+            detail = _format_error_payload(e, data_type=data_type)
+            if data_type == "text":
+                return msg + "\n\n" + (detail if isinstance(detail, str) else str(detail))
+            else:
+                return {
+                    "error": msg,
+                    "detail": detail if isinstance(detail, dict) else {"message": str(detail)}
+                }
+
+        # BAD LOCATION: try a random fallback city
+        if category == "bad_loc":
+            fallback = _pick_fallback_location()
+            notice = f"⚠️ Could not resolve location '{loc}'. Showing weather for random fallback: '{fallback}'."
+            try:
+                raw = _fetch(fallback)
+                if data_type == "json":
+                    data = _trim_days(_to_dict(raw), days)
+                    data["meta"] = {
+                        "notice": notice,
+                        "original_location": loc,
+                        "fallback_location": fallback
+                    }
+                    return data
+                else:
+                    return notice + "\n\n" + str(raw)
+            except Exception as e2:
+                # If fallback also fails, surface the combined error clearly
+                first = _format_error_payload(e, data_type=data_type)
+                second = _format_error_payload(e2, data_type=data_type)
+                if data_type == "text":
+                    return (notice + "\n"
+                            "Tried a fallback city but that failed too.\n\n"
+                            "Original error:\n" + (first if isinstance(first, str) else str(first)) +
+                            "\n\nFallback error:\n" + (second if isinstance(second, str) else str(second)))
+                else:
+                    return {
+                        "error": "Could not resolve original or fallback location.",
+                        "notice": notice,
+                        "original_error": first if isinstance(first, dict) else {"message": str(first)},
+                        "fallback_error": second if isinstance(second, dict) else {"message": str(second)}
+                    }
+
+        # HTTP / UNKNOWN: report and safely end
+        detail = _format_error_payload(e, data_type=data_type)
+        if data_type == "text":
+            return "❌ Unable to fetch weather.\n\n" + (detail if isinstance(detail, str) else str(detail))
+        else:
+            return detail if isinstance(detail, dict) else {"error": str(detail)}
+
+    # Success path
+    if data_type == "json":
+        data = _to_dict(raw)
+        return _trim_days(data, days)
+    return raw  # 'text' output is already human-readable
+
+# -------- Optional helper --------
+
+def pretty_print_weather(weather_data):
+    """Pretty-print JSON weather data (won’t crash on custom objects)."""
+    data = _to_dict(weather_data)
+    print(json.dumps(data, indent=2, ensure_ascii=False))
+
+How this behaves
+
+If the user types get_weather_data("Perth", 3, "json") and everything works → you get trimmed 3-day JSON.
+
+If they type a bad location like "Perrthh" → you’ll see a clear notice and then weather for a random fallback city (e.g., “Tokyo”). In JSON, the notice goes in meta.notice.
+
+If there’s a network outage or DNS issue → you get a friendly error explaining the connectivity problem; the program does not crash.
+
+If the server returns an HTTP error (e.g., 403/404/500) → you get a concise payload showing the status, URL (if available), and a short preview of the response body—again, no crash.
+
+ME: Analyse the following code and remove all things that are related to execption handling, clean the code with basic features
+
+import json
+import random
+import socket
+from dataclasses import is_dataclass, asdict
+
+# If your file doesn't already import the library, keep this here:
+import fetch_my_weather
+
+# ===== Helpers you already had (tweaked only where needed) =====
+
+def _to_dict(obj):
+    """Best-effort conversion to JSON-serializable dict."""
+    if isinstance(obj, dict):
+        return obj
+    for attr in ("to_dict", "dict", "model_dump"):
+        if hasattr(obj, attr) and callable(getattr(obj, attr)):
+            return getattr(obj, attr)()
+    if hasattr(obj, "json") and callable(getattr(obj, "json")):
+        try:
+            return json.loads(obj.json())
+        except Exception:
+            pass
+    if is_dataclass(obj):
+        return asdict(obj)
+    if isinstance(obj, str):
+        try:
+            return json.loads(obj)
+        except Exception:
+            pass
+    return {"raw": repr(obj)}
+
+def _trim_days(d, days):
+    """Trim common forecast arrays to `days` if present."""
+    try:
+        if "weather" in d and isinstance(d["weather"], list):
+            d["weather"] = d["weather"][:days]
+        elif "forecast" in d:
+            f = d["forecast"]
+            if isinstance(f, list):
+                d["forecast"] = f[:days]
+            elif isinstance(f, dict):
+                if "forecastday" in f and isinstance(f["forecastday"], list):
+                    f["forecastday"] = f["forecastday"][:days]
+                elif "daily" in f and isinstance(f["daily"], list):
+                    f["daily"] = f["daily"][:days]
+        elif "daily" in d and isinstance(d["daily"], list):
+            d["daily"] = d["daily"][:days]
+    except Exception:
+        pass
+    return d
+
+def _clean_location(loc: str) -> str:
+    """Normalize spacing/casing (helps with leading/trailing spaces)."""
+    s = str(loc).strip()
+    s = " ".join(s.split())
+    return s.title() or s
+
+def _pick_fallback_location() -> str:
+    """Return a random well-known city that almost always resolves."""
+    candidates = [
+        "Perth", "Sydney", "Melbourne", "Auckland", "Singapore",
+        "Tokyo", "London", "New York", "Toronto", "Paris", "Mumbai"
+    ]
+    return random.choice(candidates)
+
+def _classify_error(e) -> str:
+    """
+    Best-effort classification of the exception:
+      - 'network'    : DNS, connection, timeout, offline
+      - 'http'       : HTTP status errors (e.g., 4xx/5xx)
+      - 'bad_loc'    : likely invalid location string
+      - 'unknown'    : everything else
+    """
+    # Common network-style exceptions
+    network_like = (
+        ConnectionError, TimeoutError, socket.gaierror, socket.timeout
+    )
+    try:
+        import requests
+        network_like = network_like + (
+            requests.exceptions.ConnectionError,
+            requests.exceptions.Timeout,
+        )
+        if isinstance(e, requests.exceptions.HTTPError):
+            # Let HTTP error be classified below
+            pass
+    except Exception:
+        # requests might not be present; that's fine
+        pass
+
+    # 1) Network / connectivity
+    if isinstance(e, network_like):
+        return "network"
+
+    # 2) Requests-like HTTPError or anything with a response + status
+    resp = getattr(e, "response", None)
+    status = getattr(resp, "status_code", None) or getattr(e, "status", None)
+    if status:
+        return "http"
+
+    # 3) Heuristics for bad/unknown location based on error text
+    msg = (str(e) or "").lower()
+    bad_loc_markers = [
+        "location not found", "no matching location", "invalid location",
+        "could not geocode", "q parameter is invalid", "city not found"
+    ]
+    if any(mark in msg for mark in bad_loc_markers):
+        return "bad_loc"
+
+    # 4) Fallback
+    return "unknown"
+
+def _format_error_payload(e, data_type="json"):
+    """
+    Build a clear error message from exceptions raised by the library/HTTP layer.
+    Tries to surface status code, URL, and a short preview of the response body.
+    """
+    status = getattr(e, "status", None) or getattr(e, "status_code", None)
+    url = getattr(e, "url", None)
+    body = getattr(e, "body", None) or getattr(e, "response", None)
+    resp = getattr(e, "response", None)
+    if hasattr(resp, "status_code"):
+        status = status or resp.status_code
+    if hasattr(resp, "url"):
+        url = url or resp.url
+    if hasattr(resp, "text"):
+        body = body or resp.text
+
+    parts = []
+    if status: parts.append(f"HTTP {status}")
+    if url: parts.append(f"URL: {url}")
+    msg = str(e).strip()
+    if msg:
+        parts.append(f"Message: {msg}")
+    if body:
+        preview = body if isinstance(body, str) else str(body)
+        preview = preview.strip().splitlines()
+        preview = "\n".join(preview[:3])  # first few lines only
+        parts.append(f"Response (start):\n{preview}")
+
+    text = "Fetch failed.\n" + ("\n".join(parts) if parts else "Unknown error.")
+    if data_type == "text":
+        return text
+    return {"error": text}
+
+# ===== Main API with robust error handling & graceful fallback =====
+
+def get_weather_data(location, forecast_days=None, data_type=None):
+    """
+    Retrieve weather data via fetch_my_weather with safe defaults and clear errors.
+
+    Defaults:
+      - forecast_days: 3 (clamped to 1..5 if out of range or invalid)
+      - data_type: "json"
+
+    Behavior on errors:
+      - Invalid / unresolvable location: prints reason and returns a RANDOM city's weather instead
+      - Network / connectivity error: prints reason and returns a clear error payload (no crash)
+      - HTTP / other error: prints reason and returns a clear error payload (no crash)
+    """
+    # defaults
+    data_type = (data_type or "json").lower()
+    if data_type not in ("json", "text"):
+        data_type = "json"
+
+    try:
+        days = 3 if forecast_days is None else int(forecast_days)
+    except Exception:
+        days = 3
+    if not (1 <= days <= 5):
+        days = 3
+
+    loc = _clean_location(location)
+
+    def _fetch(loc_name: str):
+        return fetch_my_weather.get_weather(
+            location=loc_name,
+            format=data_type,
+            view_options=str(days)  # library expects a *string*
+        )
+
+    # First attempt: user-provided location
+    try:
+        raw = _fetch(loc)
+    except Exception as e:
+        print(e)
+        category = _classify_error(e)
+
+        # NETWORK: report and safely end
+        if category == "network":
+            msg = "❌ Network/connectivity issue detected. Unable to reach the weather service."
+            detail = _format_error_payload(e, data_type=data_type)
+            if data_type == "text":
+                return msg + "\n\n" + (detail if isinstance(detail, str) else str(detail))
+            else:
+                return {
+                    "error": msg,
+                    "detail": detail if isinstance(detail, dict) else {"message": str(detail)}
+                }
+
+        # BAD LOCATION: try a random fallback city
+        if category == "bad_loc":
+            fallback = _pick_fallback_location()
+            notice = f"⚠️ Could not resolve location '{loc}'. Showing weather for random fallback: '{fallback}'."
+            try:
+                raw = _fetch(fallback)
+                if data_type == "json":
+                    data = _trim_days(_to_dict(raw), days)
+                    data["meta"] = {
+                        "notice": notice,
+                        "original_location": loc,
+                        "fallback_location": fallback
+                    }
+                    return data
+                else:
+                    return notice + "\n\n" + str(raw)
+            except Exception as e2:
+                # If fallback also fails, surface the combined error clearly
+                first = _format_error_payload(e, data_type=data_type)
+                second = _format_error_payload(e2, data_type=data_type)
+                if data_type == "text":
+                    return (notice + "\n"
+                            "Tried a fallback city but that failed too.\n\n"
+                            "Original error:\n" + (first if isinstance(first, str) else str(first)) +
+                            "\n\nFallback error:\n" + (second if isinstance(second, str) else str(second)))
+                else:
+                    return {
+                        "error": "Could not resolve original or fallback location.",
+                        "notice": notice,
+                        "original_error": first if isinstance(first, dict) else {"message": str(first)},
+                        "fallback_error": second if isinstance(second, dict) else {"message": str(second)}
+                    }
+
+        # HTTP / UNKNOWN: report and safely end
+        detail = _format_error_payload(e, data_type=data_type)
+        if data_type == "text":
+            return "❌ Unable to fetch weather.\n\n" + (detail if isinstance(detail, str) else str(detail))
+        else:
+            return detail if isinstance(detail, dict) else {"error": str(detail)}
+
+    # Success path
+    if data_type == "json":
+        data = _to_dict(raw)
+        return _trim_days(data, days)
+    return raw  # 'text' output is already human-readable
+
+# -------- Optional helper --------
+
+def pretty_print_weather(weather_data):
+    """Pretty-print JSON weather data (won’t crash on custom objects)."""
+    data = _to_dict(weather_data)
+    print(json.dumps(data, indent=2, ensure_ascii=False))
+
+
+Got it—here’s a stripped-down, “basic features only” version with all exception-handling code removed (no fallbacks, no classifiers, no try/except). It just cleans the location, calls fetch_my_weather, and optionally trims the forecast to the requested number of days.
+
+import json
+from dataclasses import is_dataclass, asdict
+import fetch_my_weather
+
+# ===== Minimal helpers (no try/except) =====
+
+def _to_dict(obj):
+    """Minimal conversion to a dict; no error handling."""
+    if isinstance(obj, dict):
+        return obj
+    if is_dataclass(obj):
+        return asdict(obj)
+    return {"raw": repr(obj)}
+
+def _trim_days(d, days):
+    """Trim common forecast arrays to `days` if present (no error handling)."""
+    if "weather" in d and isinstance(d["weather"], list):
+        d["weather"] = d["weather"][:days]
+    elif "forecast" in d:
+        f = d["forecast"]
+        if isinstance(f, list):
+            d["forecast"] = f[:days]
+        elif isinstance(f, dict):
+            if "forecastday" in f and isinstance(f["forecastday"], list):
+                f["forecastday"] = f["forecastday"][:days]
+            elif "daily" in f and isinstance(f["daily"], list):
+                f["daily"] = f["daily"][:days]
+    elif "daily" in d and isinstance(d["daily"], list):
+        d["daily"] = d["daily"][:days]
+    return d
+
+def _clean_location(loc: str) -> str:
+    """Normalize spacing/casing."""
+    s = str(loc).strip()
+    s = " ".join(s.split())
+    return s.title() or s
+
+# ===== Main API (no exception handling) =====
+
+def get_weather_data(location, forecast_days=None, data_type=None):
+    """
+    Retrieve weather data via fetch_my_weather with simple defaults.
+    No exception handling; errors will propagate naturally.
+    """
+    data_type = (data_type or "json").lower()
+    if data_type not in ("json", "text"):
+        data_type = "json"
+
+    days = 3 if forecast_days is None else int(forecast_days)
+    if not (1 <= days <= 5):
+        days = 3
+
+    loc = _clean_location(location)
+
+    raw = fetch_my_weather.get_weather(
+        location=loc,
+        format=data_type,
+        view_options=str(days)  # library expects a string
+    )
+
+    if data_type == "json":
+        data = _to_dict(raw)
+        return _trim_days(data, days)
+    return raw  # 'text' output is returned as-is
+
+# ===== Optional utility =====
+
+def pretty_print_weather(weather_data):
+    """Pretty-print JSON weather data (no error handling)."""
+    data = _to_dict(weather_data)
+    print(json.dumps(data, indent=2, ensure_ascii=False))
+
+This version:
+
+removes _pick_fallback_location, _classify_error, and _format_error_payload
+
+removes all try/except blocks
+
+keeps only the core features: input cleanup, simple defaults, direct fetch, and optional trimming.
