@@ -1,12 +1,15 @@
 **Updated Readme to Read The Completed Project**
+
 **WeatherWise : AI-Powered Weather Assistant**
 WeatherWise is a Python-based weather assistant built in Google Colab. It interprets natural-language questions, fetches real-time weather data via the fetch_my_weather library, and displays results as clear text or visual charts. The project demonstrates Python integration of APIs, basic NLP parsing, and data visualization in an interactive, user-friendly workflow.
+
 **Features**
 •	Natural Language Parsing: Understands user questions such as “What’s the weather in Perth tomorrow?”
 •	Live API Integration: Retrieves data directly from fetch_my_weather with JSON or text output.
 •	Visual Forecasts: Generates temperature and precipitation charts using Matplotlib.
 •	Error Handling: Detects invalid inputs and provides user-friendly messages.
 •	Manual & AI Modes: Switch between guided menu input and conversational querying.
+
 **Program Structure**
 weatherwise/
 generate_weather_response()   # entry point / main function
@@ -14,6 +17,7 @@ generate_weather_response()   # entry point / main function
 •	parse_weather_question()     # Extracts location and forecast intent using NLP
 •	create_temperature_visualisation()   # visualizes temperature forecast
 •	create_precipitation_visualisation()  # visualizes precipitation forecast
+
 **Installation & Usage**
 Run the notebook in Google Colab or any Python 3.10+ environment:
 pip install fetch_my_weather pyinputplus matplotlib hands-on-ai
@@ -23,6 +27,7 @@ When prompted:
 •	Enter a location name (e.g., “Perth”)
 •	Choose JSON or text display
 •	View optional visualizations
+
 **Learning Outcomes**
 This project reinforces:
 •	Working with external APIs and JSON data
